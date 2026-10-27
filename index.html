@@ -333,6 +333,8 @@
     }
     $('badge').textContent = `${S.set}　${s.n} / ${s.of}`;
     new Image().src = urls[steps[(k + 1) % steps.length].i]; // preload the next picture
+    // remember where we are, so a reload by the browser resumes here (see openApp)
+    try { localStorage.setItem(PLAYING, JSON.stringify({ set: S.set, pos: k })); } catch {}
     run(s.sec * 1000, s.sec * 1000);
   }
   function run(ms, full) {
@@ -353,10 +355,13 @@
     show(pos);
   }
 
-  function start() {
+  const PLAYING = 'saisho-playing';
+  function start(resumeAt = 0) {
     const set = current();
     if (!set || !set.images.length) return;
-    steps = buildSteps(set); pos = 0; paused = false;
+    steps = buildSteps(set); paused = false;
+    pos = resumeAt < steps.length ? resumeAt : 0;
+    while (pos > 0 && steps[pos].n === steps[pos - 1].n) pos--; // start from the question, not its answer
     $('img').dataset.i = '';
     $('pause').textContent = '⏸ 一時停止';
     $('overlay').classList.remove('show');
@@ -365,10 +370,11 @@
     // don't wait for fullscreen: some browsers never settle the promise, and iPhones don't support it
     try { document.documentElement.requestFullscreen?.().catch(() => {}); } catch {}
     keepAwake();
-    show(0);
+    show(pos);
   }
   function stop() {
     clearTimeout(timer);
+    try { localStorage.removeItem(PLAYING); } catch {}
     urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
     $('stage').classList.remove('show');
     $('setup').style.display = '';
@@ -390,7 +396,7 @@
     }
   }
 
-  $('start').onclick = start;
+  $('start').onclick = () => start();
   $('stage').onclick = e => { if (!e.target.closest('.box')) $('overlay').classList.toggle('show'); };
   $('pause').onclick = togglePause;
   $('next').onclick = () => { paused = false; $('pause').textContent = '⏸ 一時停止'; $('overlay').classList.remove('show'); advance(); };
@@ -414,10 +420,14 @@
       images: set.images.map(im => ({ name: im.name, blob: new Blob([pt.subarray(body + im.at, body + im.at + im.size)], { type: im.type }) })),
     }));
   }
-  function openApp() {
+  async function openApp() {
     $('gate').hidden = true; $('setup').hidden = false;
     renderSettings();
-    renderSets();
+    await renderSets();
+    // the page was reloaded while playing (e.g. the phone ran low on memory): carry on by itself
+    let was = null;
+    try { was = JSON.parse(localStorage.getItem(PLAYING) || 'null'); } catch {}
+    if (was && was.set === S.set && current()) start(was.pos);
   }
   $('gateForm').onsubmit = async e => {
     e.preventDefault();
