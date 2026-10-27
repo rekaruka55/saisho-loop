@@ -36,6 +36,8 @@
   .stepper { display:flex; align-items:center; gap:6px; }
   .stepper .btn { padding:8px 11px; }
   .stepper .val { min-width:68px; text-align:center; font-size:22px; font-variant-numeric:tabular-nums; }
+  .stepper input.val { width:76px; min-width:0; border:1px solid var(--line); background:var(--bg); border-radius:8px; padding:4px 2px; font-size:20px; }
+  .stepper input.val::-webkit-inner-spin-button { display:none; }
   .field { margin-top:16px; }
   .field > .label { font-size:13px; color:var(--muted); margin-bottom:6px; }
   input[type=text] { border:1px solid var(--line); background:var(--bg); border-radius:8px; padding:8px 10px; width:9em; }
@@ -100,11 +102,11 @@
     </div>
     <div class="field">
       <div class="label" id="qLabel"></div>
-      <div class="stepper" data-key="qSec"></div>
+      <div class="stepper" data-key="qSec" data-fine="1"></div>
     </div>
     <div class="field" id="aField">
       <div class="label" id="aLabel"></div>
-      <div class="stepper" data-key="aSec"></div>
+      <div class="stepper" data-key="aSec" data-fine="1"></div>
     </div>
     <div class="field">
       <div class="label">順番</div>
@@ -237,17 +239,28 @@
       box.append(b);
     }
   }
+  // seconds go in 0.1 s steps (and can be typed in); the cover percentage in whole steps
   function stepper(el) {
-    const key = el.dataset.key, unit = el.dataset.unit || '秒';
-    const lo = +(el.dataset.min || 1), hi = +(el.dataset.max || 120);
+    const key = el.dataset.key, unit = el.dataset.unit || '秒', fine = !!el.dataset.fine;
+    const lo = +(el.dataset.min || (fine ? 0.1 : 1)), hi = +(el.dataset.max || 120);
+    const set = x => { if (Number.isFinite(x)) { S[key] = Math.min(hi, Math.max(lo, Math.round(x * 10) / 10)); save(); } renderSettings(); };
     el.innerHTML = '';
     const mk = (t, d) => {
       const b = document.createElement('button'); b.className = 'btn'; b.textContent = t;
-      b.onclick = () => { S[key] = Math.min(hi, Math.max(lo, S[key] + d)); save(); renderSettings(); };
+      b.onclick = () => set(S[key] + d);
       return b;
     };
-    const v = document.createElement('div'); v.className = 'val'; v.textContent = S[key] + unit;
-    el.append(mk('−5', -5), mk('−1', -1), v, mk('+1', 1), mk('+5', 5));
+    if (fine) {
+      const v = document.createElement('input');
+      Object.assign(v, { type: 'number', inputMode: 'decimal', step: '0.1', min: lo, max: hi, value: S[key].toFixed(1), className: 'val' });
+      v.setAttribute('aria-label', '秒数');
+      v.onchange = () => set(parseFloat(v.value.replace(',', '.')));
+      const u = document.createElement('span'); u.textContent = unit;
+      el.append(mk('−1', -1), mk('−0.1', -0.1), v, u, mk('+0.1', 0.1), mk('+1', 1));
+    } else {
+      const v = document.createElement('div'); v.className = 'val'; v.textContent = S[key] + unit;
+      el.append(mk('−5', -5), mk('−1', -1), v, mk('+1', 1), mk('+5', 5));
+    }
   }
   let previewUrl = '';
   function renderPreview() {
