@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>斉唱ループ</title>
+<style>
+  :root { --bg:#f6f5f1; --surface:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#dcdad3; --accent:#c8312b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#171716; --surface:#22221f; --ink:#ecebe6; --muted:#a3a29b; --line:#3a3935; --accent:#e5574f; }
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { background:var(--bg); color:var(--ink); font:16px/1.6 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif; -webkit-text-size-adjust:100%; }
+  button, input { font:inherit; color:inherit; }
+  main { max-width:640px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:4px 0 2px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .panel { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:14px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .btn { border:1px solid var(--line); background:var(--surface); border-radius:10px; padding:10px 14px; cursor:pointer; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  .btn.big { width:100%; padding:16px; font-size:18px; }
+  .btn:disabled { opacity:.45; cursor:default; }
+  .chip { border:1px solid var(--line); background:transparent; border-radius:999px; padding:6px 14px; cursor:pointer; text-align:left; }
+  .chip.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .set { display:flex; gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+  .set:first-child { border-top:0; }
+  .set .info { flex:1; min-width:0; }
+  .thumbs { display:flex; gap:4px; overflow-x:auto; margin-top:4px; }
+  .thumbs img { height:44px; border-radius:4px; border:1px solid var(--line); }
+  .stepper { display:flex; align-items:center; gap:6px; }
+  .stepper .btn { padding:8px 11px; }
+  .stepper .val { min-width:68px; text-align:center; font-size:22px; font-variant-numeric:tabular-nums; }
+  .field { margin-top:16px; }
+  .field > .label { font-size:13px; color:var(--muted); margin-bottom:6px; }
+  input[type=text] { border:1px solid var(--line); background:var(--bg); border-radius:8px; padding:8px 10px; width:9em; }
+
+  /* an image with an optional cover over its bottom part */
+  .frame { position:relative; }
+  .frame img { display:block; width:100%; height:100%; }
+  .frame .cover { position:absolute; left:0; right:0; bottom:0; background:#fff; }
+  #preview .frame { max-width:260px; border:1px solid var(--line); }
+  #preview .cover { outline:2px dashed var(--accent); outline-offset:-2px; }
+
+  /* playback */
+  #stage { position:fixed; inset:0; background:#000; display:none; z-index:10; align-items:center; justify-content:center; }
+  #stage.show { display:flex; }
+  #badge { position:absolute; top:max(8px, env(safe-area-inset-top)); left:10px; color:#fff; background:rgba(0,0,0,.45); border-radius:999px; padding:1px 10px; font-size:13px; }
+  #bar { position:absolute; left:0; bottom:0; height:4px; background:rgba(255,255,255,.55); width:0; }
+  #overlay { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); }
+  #overlay.show { display:flex; }
+  #overlay .box { display:flex; flex-direction:column; gap:10px; width:min(280px, 80vw); }
+  #overlay .btn { background:#fff; color:#000; border:0; font-size:18px; padding:14px; }
+</style>
+</head>
+<body>
+<main id="gate" hidden>
+  <h1>斉唱ループ</h1>
+  <div class="panel">
+    <p style="margin:0 0 10px">教えてもらった合言葉を入れてください。</p>
+    <form id="gateForm">
+      <input type="password" id="pass" autocomplete="current-password" aria-label="合言葉" required style="width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:16px">
+      <label class="muted" style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="remember" checked> この端末で合言葉を覚える</label>
+      <button class="btn primary big" id="go">開く</button>
+      <p id="gateMsg" role="alert" style="color:var(--accent);min-height:1.6em;margin:8px 0 0"></p>
+    </form>
+  </div>
+</main>
+
+<main id="setup" hidden>
+  <h1>斉唱ループ</h1>
+  <div class="muted">問題と答えの画像が、決めた秒数でずっと流れ続けます。画像はこの端末の中だけに保存され、ネットには送られません。</div>
+
+  <div class="panel">
+    <h2>どれを流す？</h2>
+    <div id="sets"></div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="newName" placeholder="名前（例: 34）">
+      <button class="btn" id="addSet">＋ 画像を選んで追加</button>
+    </div>
+    <div class="muted" style="margin-top:6px">画像はまとめて選べます。ファイル名の順（1, 2, …10）に並びます。</div>
+  </div>
+
+  <div class="panel">
+    <h2>流し方</h2>
+    <div class="field" style="margin-top:0">
+      <div class="label">画像の形</div>
+      <div class="row" id="layout"></div>
+      <div class="muted" id="layoutHelp" style="margin-top:6px"></div>
+    </div>
+    <div class="field" id="coverField">
+      <div class="label">下から何％を隠す？（答えが書いてある範囲）</div>
+      <div class="stepper" data-key="cover" data-unit="％" data-min="5" data-max="95"></div>
+      <div id="preview" style="margin-top:8px"></div>
+    </div>
+    <div class="field">
+      <div class="label" id="qLabel"></div>
+      <div class="stepper" data-key="qSec"></div>
+    </div>
+    <div class="field" id="aField">
+      <div class="label" id="aLabel"></div>
+      <div class="stepper" data-key="aSec"></div>
+    </div>
+    <div class="field">
+      <div class="label">順番</div>
+      <div class="row" id="order"></div>
+    </div>
+  </div>
+
+  <div style="margin-top:18px"><button class="btn primary big" id="start">▶ スタート</button></div>
+  <div class="muted" style="margin-top:10px">再生中に画面をタップすると、一時停止・次へ・設定に戻るボタンが出ます。<br>
+  しばらくすると画面が消えてしまう場合は、スマホの設定で「自動ロック（画面消灯）」を「なし」か最長にしてください。</div>
+</main>
+
+<div id="stage">
+  <div class="frame" id="frame"><img id="img" alt=""><div class="cover" id="cover"></div></div>
+  <div id="badge"></div>
+  <div id="bar"></div>
+  <div id="overlay"><div class="box">
+    <button class="btn" id="pause">⏸ 一時停止</button>
+    <button class="btn" id="next">⏭ 次へ</button>
+    <button class="btn" id="stop">⚙ 設定に戻る</button>
+    <button class="btn" id="close">✕ 閉じる</button>
+  </div></div>
+</div>
+
+<input type="file" id="picker" accept="image/*" multiple hidden>
+
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const LAYOUTS = [
+    { id: 'cover', label: '1枚に問題と答え', help: '答えの部分を白く隠しておき、秒数が来たら見せます（YouTubeの一問一答と同じ流れ）。' },
+    { id: 'pair', label: '問題と答えが別の画像', help: '1枚目が問題、2枚目がその答え、3枚目が次の問題…の順に並んでいる場合。' },
+    { id: 'each', label: '1枚ずつ流すだけ', help: '隠さずに、どの画像も同じ秒数で順番に見せます。' },
+  ];
+  const ORDERS = [{ id: 'seq', label: '番号順' }, { id: 'rand', label: 'ランダム' }];
+  const LABELS = {
+    cover: ['答えを隠しておく秒数（考える時間）', '答えを見せてから次へ進むまでの秒数'],
+    pair: ['問題を見せる秒数', '答えを見せる秒数'],
+    each: ['1枚を見せる秒数', ''],
+  };
+
+  // ---- settings (saved per device) ----
+  const DEFAULTS = { set: '', layout: 'pair', qSec: 6, aSec: 4, order: 'seq', cover: 50 };
+  const S = { ...DEFAULTS };
+  try { Object.assign(S, JSON.parse(localStorage.getItem('saisho-settings') || '{}')); } catch {}
+  if (!LAYOUTS.some(l => l.id === S.layout)) S.layout = DEFAULTS.layout;
+  const save = () => { try { localStorage.setItem('saisho-settings', JSON.stringify(S)); } catch {} };
+
+  // ---- image storage (IndexedDB, one record per set) ----
+  let dbp;
+  const db = () => dbp ||= new Promise((ok, ng) => {
+    const r = indexedDB.open('saisho', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('sets', { keyPath: 'name' });
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => ng(r.error);
+  });
+  const req = async (mode, fn) => {
+    const store = (await db()).transaction('sets', mode).objectStore('sets');
+    return new Promise((ok, ng) => { const r = fn(store); r.onsuccess = () => ok(r.result); r.onerror = () => ng(r.error); });
+  };
+  const byName = (a, b) => a.localeCompare(b, 'ja', { numeric: true });
+
+  let sets = [];
+  let builtin = []; // sets decrypted from data.enc (read-only)
+  let thumbUrls = [];
+  const current = () => sets.find(x => x.name === S.set);
+
+  async function renderSets() {
+    let mine = [];
+    try { mine = await req('readonly', s => s.getAll()); } catch {}
+    sets = [...builtin, ...mine.filter(m => !builtin.some(b => b.name === m.name)).sort((a, b) => byName(a.name, b.name))];
+    if (!current()) S.set = sets[0]?.name || '';
+    save();
+    thumbUrls.forEach(u => URL.revokeObjectURL(u)); thumbUrls = [];
+    const box = $('sets');
+    box.innerHTML = sets.length ? '' : '<div class="muted">まだありません。下の欄に名前（34 など）を入れて、画像を選んでください。</div>';
+    for (const set of sets) {
+      const el = document.createElement('div'); el.className = 'set';
+      const chip = document.createElement('button');
+      chip.className = 'chip' + (set.name === S.set ? ' on' : '');
+      chip.textContent = set.name;
+      chip.onclick = () => { S.set = set.name; save(); renderSets(); };
+      const info = document.createElement('div'); info.className = 'info';
+      info.innerHTML = `<div class="muted">${set.images.length}枚</div>`;
+      const th = document.createElement('div'); th.className = 'thumbs';
+      for (const im of set.images.slice(0, 12)) {
+        const u = URL.createObjectURL(im.blob); thumbUrls.push(u);
+        const i = document.createElement('img'); i.src = u; i.alt = i.title = im.name; th.append(i);
+      }
+      info.append(th);
+      const del = document.createElement('button'); del.className = 'btn'; del.textContent = '削除';
+      del.onclick = async () => { if (confirm(`「${set.name}」を削除しますか？`)) { await req('readwrite', s => s.delete(set.name)); renderSets(); } };
+      if (set.builtin) el.append(chip, info); else el.append(chip, info, del);
+      box.append(el);
+    }
+    $('start').disabled = !S.set;
+    renderPreview();
+  }
+
+  $('addSet').onclick = () => {
+    if (!$('newName').value.trim()) { $('newName').placeholder = '先に名前を入れてください'; $('newName').focus(); return; }
+    $('picker').click();
+  };
+  $('picker').onchange = async e => {
+    const files = [...e.target.files].sort((a, b) => byName(a.name, b.name));
+    e.target.value = '';
+    if (!files.length) return;
+    const name = $('newName').value.trim();
+    if (builtin.some(x => x.name === name)) { alert(`「${name}」は最初から入っているので、別の名前にしてください。`); return; }
+    if (sets.some(x => x.name === name) && !confirm(`「${name}」はもうあります。置き換えますか？`)) return;
+    try {
+      // store plain Blobs: some older Safari versions cannot keep File objects in IndexedDB
+      const images = await Promise.all(files.map(async f => ({ name: f.name, blob: new Blob([await f.arrayBuffer()], { type: f.type || 'image/jpeg' }) })));
+      await req('readwrite', s => s.put({ name, images }));
+    } catch (err) { alert('保存できませんでした：' + err); return; }
+    $('newName').value = '';
+    S.set = name; save();
+    renderSets();
+  };
+
+  // ---- settings UI ----
+  function chips(boxId, items, key) {
+    const box = $(boxId); box.innerHTML = '';
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (S[key] === it.id ? ' on' : '');
+      b.textContent = it.label;
+      b.onclick = () => { S[key] = it.id; save(); renderSettings(); };
+      box.append(b);
+    }
+  }
+  function stepper(el) {
+    const key = el.dataset.key, unit = el.dataset.unit || '秒';
+    const lo = +(el.dataset.min || 1), hi = +(el.dataset.max || 120);
+    el.innerHTML = '';
+    const mk = (t, d) => {
+      const b = document.createElement('button'); b.className = 'btn'; b.textContent = t;
+      b.onclick = () => { S[key] = Math.min(hi, Math.max(lo, S[key] + d)); save(); renderSettings(); };
+      return b;
+    };
+    const v = document.createElement('div'); v.className = 'val'; v.textContent = S[key] + unit;
+    el.append(mk('−5', -5), mk('−1', -1), v, mk('+1', 1), mk('+5', 5));
+  }
+  let previewUrl = '';
+  function renderPreview() {
+    const box = $('preview');
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = '';
+    const im = current()?.images[0];
+    if (!im || S.layout !== 'cover') { box.innerHTML = ''; return; }
+    previewUrl = URL.createObjectURL(im.blob);
+    box.innerHTML = `<div class="frame"><img src="${previewUrl}" alt=""><div class="cover"></div></div>
+      <div class="muted">1枚目で確認：点線の中が隠れます。答えがぴったり隠れるように％を調整してください。</div>`;
+    const img = box.querySelector('img');
+    img.onload = () => paintCover(img, box.querySelector('.cover'));
+  }
+  function renderSettings() {
+    chips('layout', LAYOUTS, 'layout');
+    chips('order', ORDERS, 'order');
+    $('layoutHelp').textContent = LAYOUTS.find(l => l.id === S.layout).help;
+    $('coverField').style.display = S.layout === 'cover' ? '' : 'none';
+    $('aField').style.display = S.layout === 'each' ? 'none' : '';
+    [$('qLabel').textContent, $('aLabel').textContent] = LABELS[S.layout];
+    document.querySelectorAll('.stepper').forEach(stepper);
+    renderPreview();
+  }
+
+  /** Size the cover and give it the image's own background colour (sampled just above the covered area). */
+  function paintCover(img, cover) {
+    cover.style.height = S.cover + '%';
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 1;
+      const x = c.getContext('2d');
+      const sy = Math.max(0, Math.round(img.naturalHeight * (1 - S.cover / 100)) - 1);
+      x.drawImage(img, img.naturalWidth - 2, sy, 1, 1, 0, 0, 1, 1);
+      const [r, g, b] = x.getImageData(0, 0, 1, 1).data;
+      cover.style.background = `rgb(${r},${g},${b})`;
+    } catch { cover.style.background = '#fff'; }
+  }
+
+  // ---- playback ----
+  // A step is one screen: { i: image index, reveal: whether the cover is lifted, sec, n, of }
+  let steps = [], urls = [], pos = 0, timer = 0, paused = false, wake = null;
+  let stepStart = 0, stepLen = 0, remain = 0;
+
+  function buildSteps(set) {
+    urls.forEach(u => URL.revokeObjectURL(u));
+    urls = set.images.map(im => URL.createObjectURL(im.blob));
+    let units = [];
+    if (S.layout === 'cover') units = urls.map((_, i) => [{ i, reveal: false, sec: S.qSec }, { i, reveal: true, sec: S.aSec }]);
+    else if (S.layout === 'pair') for (let i = 0; i < urls.length; i += 2) units.push(i + 1 < urls.length ? [{ i, sec: S.qSec }, { i: i + 1, sec: S.aSec }] : [{ i, sec: S.qSec }]);
+    else units = urls.map((_, i) => [{ i, sec: S.qSec }]);
+    if (S.order === 'rand') for (let i = units.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [units[i], units[j]] = [units[j], units[i]]; }
+    return units.flatMap((u, n) => u.map(s => ({ ...s, n: n + 1, of: units.length })));
+  }
+
+  async function keepAwake() {
+    try {
+      if ('wakeLock' in navigator && !wake && document.visibilityState === 'visible') {
+        wake = await navigator.wakeLock.request('screen');
+        wake.addEventListener('release', () => { wake = null; });
+      }
+    } catch {}
+  }
+  document.addEventListener('visibilitychange', () => { if ($('stage').classList.contains('show')) keepAwake(); });
+
+  /** Fit the frame to the screen while keeping the image's shape, so the cover lines up with the picture. */
+  function fit() {
+    const img = $('img');
+    if (!img.naturalWidth) return;
+    const k = Math.min(innerWidth / img.naturalWidth, innerHeight / img.naturalHeight);
+    $('frame').style.width = img.naturalWidth * k + 'px';
+    $('frame').style.height = img.naturalHeight * k + 'px';
+  }
+  addEventListener('resize', fit);
+
+  function show(k) {
+    const s = steps[k], img = $('img'), cover = $('cover');
+    const same = img.dataset.i === String(s.i);
+    cover.style.display = S.layout === 'cover' && !s.reveal ? '' : 'none';
+    if (!same) {
+      img.dataset.i = s.i;
+      img.onload = () => { fit(); if (S.layout === 'cover') paintCover(img, cover); };
+      img.src = urls[s.i];
+    }
+    $('badge').textContent = `${S.set}　${s.n} / ${s.of}`;
+    new Image().src = urls[steps[(k + 1) % steps.length].i]; // preload the next picture
+    run(s.sec * 1000, s.sec * 1000);
+  }
+  function run(ms, full) {
+    clearTimeout(timer);
+    stepStart = Date.now(); stepLen = ms;
+    const bar = $('bar');
+    bar.style.transition = 'none'; bar.style.width = (100 * (1 - ms / full)) + '%';
+    void bar.offsetWidth;
+    bar.style.transition = `width ${ms}ms linear`; bar.style.width = '100%';
+    timer = setTimeout(advance, ms);
+  }
+  function advance() {
+    pos++;
+    if (pos >= steps.length) { // loop forever; random order is reshuffled every round
+      pos = 0;
+      if (S.order === 'rand') steps = buildSteps(current());
+    }
+    show(pos);
+  }
+
+  function start() {
+    const set = current();
+    if (!set || !set.images.length) return;
+    steps = buildSteps(set); pos = 0; paused = false;
+    $('img').dataset.i = '';
+    $('pause').textContent = '⏸ 一時停止';
+    $('overlay').classList.remove('show');
+    $('setup').style.display = 'none';
+    $('stage').classList.add('show');
+    // don't wait for fullscreen: some browsers never settle the promise, and iPhones don't support it
+    try { document.documentElement.requestFullscreen?.().catch(() => {}); } catch {}
+    keepAwake();
+    show(0);
+  }
+  function stop() {
+    clearTimeout(timer);
+    urls.forEach(u => URL.revokeObjectURL(u)); urls = [];
+    $('stage').classList.remove('show');
+    $('setup').style.display = '';
+    try { wake?.release(); } catch {}
+    wake = null;
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  }
+  function togglePause() {
+    const bar = $('bar');
+    if (!paused) {
+      paused = true; clearTimeout(timer);
+      remain = Math.max(0, stepLen - (Date.now() - stepStart));
+      bar.style.width = getComputedStyle(bar).width; bar.style.transition = 'none';
+      $('pause').textContent = '▶ 再開';
+    } else {
+      paused = false; $('pause').textContent = '⏸ 一時停止';
+      $('overlay').classList.remove('show');
+      run(remain, steps[pos].sec * 1000);
+    }
+  }
+
+  $('start').onclick = start;
+  $('stage').onclick = e => { if (!e.target.closest('.box')) $('overlay').classList.toggle('show'); };
+  $('pause').onclick = togglePause;
+  $('next').onclick = () => { paused = false; $('pause').textContent = '⏸ 一時停止'; $('overlay').classList.remove('show'); advance(); };
+  $('stop').onclick = stop;
+  $('close').onclick = () => $('overlay').classList.remove('show');
+
+  // ---- built-in images: data.enc = salt(16) + iv(12) + AES-GCM ciphertext of
+  //      [4-byte manifest length][manifest JSON][image bytes...]. Made by build.mjs.
+  const KEY = 'saisho-key', ITER = 600000;
+  const b64 = u8 => btoa(String.fromCharCode(...new Uint8Array(u8)));
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  let enc = null;
+
+  async function unpack(key) {
+    const pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: enc.subarray(16, 28) }, key, enc.subarray(28)));
+    const len = new DataView(pt.buffer).getUint32(0);
+    const manifest = JSON.parse(new TextDecoder().decode(pt.subarray(4, 4 + len)));
+    const body = 4 + len;
+    builtin = manifest.sets.map(set => ({
+      name: set.name, builtin: true,
+      images: set.images.map(im => ({ name: im.name, blob: new Blob([pt.subarray(body + im.at, body + im.at + im.size)], { type: im.type }) })),
+    }));
+  }
+  function openApp() {
+    $('gate').hidden = true; $('setup').hidden = false;
+    renderSettings();
+    renderSets();
+  }
+  $('gateForm').onsubmit = async e => {
+    e.preventDefault();
+    const go = $('go');
+    go.disabled = true; go.textContent = '確認しています…'; $('gateMsg').textContent = '';
+    try {
+      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode($('pass').value.trim().normalize('NFC')), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: enc.subarray(0, 16), iterations: ITER, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+      await unpack(key);
+      if ($('remember').checked) { try { localStorage.setItem(KEY, b64(await crypto.subtle.exportKey('raw', key))); } catch {} }
+      openApp();
+    } catch {
+      $('gateMsg').textContent = '合言葉が違います。もう一度確かめてください。';
+      go.disabled = false; go.textContent = '開く';
+    }
+  };
+
+  (async () => {
+    try {
+      const res = await fetch('data.enc', { cache: 'no-cache' });
+      if (res.ok) enc = new Uint8Array(await res.arrayBuffer());
+    } catch {}
+    if (!enc) return openApp(); // no built-in images: just the player
+    try {
+      const saved = localStorage.getItem(KEY);
+      if (saved) {
+        await unpack(await crypto.subtle.importKey('raw', unb64(saved), 'AES-GCM', false, ['decrypt']));
+        return openApp();
+      }
+    } catch { try { localStorage.removeItem(KEY); } catch {} } // images were re-encrypted: ask again
+    $('gate').hidden = false;
+    $('pass').focus();
+  })();
+})();
+</script>
+</body>
+</html>
